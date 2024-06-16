@@ -5,8 +5,11 @@ import numpy as np
 import math
 import datetime
 import time
-from mplfinance.original_flavor import candlestick_ohlc
-import matplotlib.dates as mdates
+
+
+
+
+
 from pprint import pprint
 import random
 
@@ -36,10 +39,10 @@ class BotBinance:
                  {'name':'smaS','status':False,'label':'Sma short', 'color':''},
                  {'name':'smaM','status':False,'label':'Sma Medium', 'color':''},
                  {'name':'smaL','status':False,'label':'Sma Long', 'color':''},
-                 {'name':'rsi','status':False,'label':'RSI', 'color':''},
-                 {'name':'mfi','status':False,'label':'MFI', 'color':''},
+                 {'name':'rsi','status':True,'label':'RSI', 'color':''},
+                 {'name':'mfi','status':True,'label':'MFI', 'color':''},
                  {'name':'closes','status':True,'label':'Closes', 'color':''},
-                 {'name':'macd','status':False,'label':'MACD', 'color':''},
+                 {'name':'macd','status':True,'label':'MACD', 'color':''},
                  {'name':'upperband','status':True,'label':'Upper Band', 'color':''},
                  {'name':'lowerband','status':True,'label':'Lower Band', 'color':''},
                  {'name':'middleband','status':True,'label':'Middle Band', 'color':''},
@@ -460,7 +463,7 @@ class BotBinance:
 
     def generate_unique_color(self):
         # Lista de colores disponibles
-        available_colours = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black']
+        available_colours = ['blue', 'green', 'red', 'magenta', 'black']
 
         # Elimina los colores que ya han sido usados
         available_colours = [color for color in available_colours if color not in self.used_colors]
@@ -477,38 +480,7 @@ class BotBinance:
         
         # Devuelve el color generado
         return new_color
-
-    def update_chart(self, fig,  candles, indicators):
-        # Crear el subgráfico de velas e indicadores
-        ax1 = fig.add_subplot(1, 1, 1)
-        ax1.set_ylabel('Price')
-        ax1.set_xlabel('Time')
-        df = self.create_dataframe(candles)
-        df['Datetime'] = df.index.map(mdates.date2num)
-        # Ajustar el ancho de las velas
-        ohlc = df[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']].values
-        candlestick_ohlc(ax=ax1, quotes=ohlc, width=0.0001, colorup='green', colordown='red') # Aumentar el ancho de las velas
-        # Graficar los otros indicadores
-        for name, data in indicators.items():
-            for enable_ind in self.enable_inidicator:
-                if enable_ind['name']==name and enable_ind['status'] == True:
-                    if enable_ind['color']=='':
-                        color = self.generate_unique_color()
-                        enable_ind['color']=color
-                    else:
-                        color=enable_ind['color']
-                    ax1.plot(df['Datetime'], data, label= enable_ind['label'], color=color, linewidth=0.8)    
-            
-                
-        # Añadir la leyenda para los indicadores de precios
-        ax1.legend(loc='upper left', fontsize='small')
-        
-        # Ajustar los límites del eje y para mejorar la visualización
-        ax1.set_ylim(min(df['Low'])-min(df['Low'])*1.3/100, max(df['High'])+ max(df['High'])*1.3/100)
-        
-        # Ajustar el espaciado entre subgráficos
-        fig.tight_layout(pad=0.8)
-        return fig
+    
     def update_data(self):
         asset_primary=self.asset_primary
         asset_secundary = self.asset_secundary
@@ -647,6 +619,7 @@ class BotBinance:
             'upperband':upperband,
             'middleband':middleband,
             'lowerband':lowerband,
+            'macd': [macd, macdsignal, macdhist]
 
         }
         return  indicators, print_msg, print_alert, print_ear, print_price_market, candles, price_market, last_price_market
