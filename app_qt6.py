@@ -1,10 +1,12 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QCheckBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QCheckBox, QScrollArea
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
+from mplfinance.original_flavor import candlestick_ohlc
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
 from pprint import pprint
 from bot import BotBinance 
 
@@ -130,12 +132,10 @@ class MainWindow(QMainWindow):
         layout_main_h_5.addWidget(self.checkbox_smaM, alignment=Qt.AlignmentFlag.AlignJustify)
         layout_main_h_5.addWidget(self.checkbox_smaL, alignment=Qt.AlignmentFlag.AlignJustify)
         
-        
         # Crear figura de Matplotlib
-        self.fig = Figure(figsize=(13, 5), dpi=85)
+        self.fig, (self.ax1, self.ax2, self.ax3) = plt.subplots(3, 1, figsize=(14, 12), gridspec_kw={'height_ratios': [3, 1, 1]})
         self.canvas = FigureCanvas(self.fig)
         layout_main_h_4.addWidget(self.canvas, alignment=Qt.AlignmentFlag.AlignJustify)
-        
         central_widget = QWidget()
         
         
@@ -152,11 +152,90 @@ class MainWindow(QMainWindow):
         layout_main_v.setAlignment(layout_main_h_4, Qt.AlignmentFlag.AlignJustify)
         
         central_widget.setLayout(layout_main_v)
+        
+        # Añadir el widget principal al QScrollArea
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(central_widget)
+        
+        # Establecer el QScrollArea como el widget central
+        self.setCentralWidget(scroll_area)
+        
         self.setCentralWidget(central_widget)
 
         # Configurar el trabajador (worker) para la actualización de datos
         self.worker = Worker(self.bot)
         self.worker.data_updated.connect(self.update_ui)
+
+
+    def update_chart(self, candles, indicators):
+        self.ax1.clear()
+        self.ax2.clear()
+        self.ax3.clear()
+        
+        # Crear el DataFrame
+        df = self.bot.create_dataframe(candles)
+        df['Datetime'] = df.index.map(mdates.date2num)
+
+        # Ajustar el ancho de las velas
+        ohlc = df[['Datetime', 'Open', 'High', 'Low', 'Close', 'Volume']].values
+        candlestick_ohlc(ax=self.ax1, quotes=ohlc, width=0.0001, colorup='green', colordown='red') 
+    
+        # Graficar los indicadores en los subgráficos correspondientes
+        for name, data in indicators.items():
+            for enable_ind in self.bot.enable_inidicator:
+                if enable_ind['name']==name and enable_ind['status'] == True:
+                    if enable_ind['color']=='':
+                        color = self.bot.generate_unique_color()
+                        enable_ind['color']=color
+                    else:
+                        color=enable_ind['color']
+                    if name in ['rsi', 'mfi']:
+                        self.ax2.plot(df['Datetime'], data, label= enable_ind['label'], color=color, linewidth=0.8)
+                        if name=="ris":
+                            self.ax2.axhline(70, linestyle='--', alpha=0.5, color='red')
+                            self.ax2.axhline(30, linestyle='--', alpha=0.5, color='green')
+                        else:
+                            self.ax2.axhline(80, linestyle='--', alpha=0.5, color='blue')
+                            self.ax2.axhline(20, linestyle='--', alpha=0.5, color='orange')    
+                        #pass
+                    elif name == 'macd':
+                        self.ax3.plot(df['Datetime'], data[0], label='MACD', color="blue", linewidth=0.6)  
+                        self.ax3.plot(df['Datetime'], data[1], label='Signal', color="red", linewidth=0.8)
+                        colors = ['green' if val >= 0 else 'red' for val in data[2]]
+                        self.ax3.bar(df['Datetime'], data[2], label='MACD Histogram', color=colors, linewidth=0.008,  alpha=0.003)
+                        
+                        
+                    else: 
+                        self.ax1.plot(df['Datetime'], data, label= enable_ind['label'], color=color, linewidth=0.8)    
+        # Añadir la leyenda para los indicadores
+        self.ax1.legend(loc='upper left', fontsize='small')
+        self.ax2.legend(loc='upper left', fontsize='small')
+        self.ax3.legend(loc='upper left', fontsize='small')
+        
+        # Configurar las etiquetas de los ejes y ajustar los límites del eje y
+        self.ax1.set_ylabel('Price')
+        self.ax1.set_xlabel('Time')
+        self.ax1.set_ylim(df['Close'].min()-df['Close'].min()*0.07/100, df['Close'].max()+ df['Close'].max()*0.07/100)
+        self.ax1.set_xlim(df['Datetime'].min(), df['Datetime'].max())     
+
+        self.ax2.set_ylabel('Volume')
+        self.ax2.set_xlabel('Time')
+        self.ax2.set_ylim(0, 100)  # Para RSI y MFI
+        self.ax2.set_xlim(df['Datetime'].min(), df['Datetime'].max()) 
+        
+        self.ax3.set_ylabel('Price')
+        self.ax3.set_xlabel('Time') #macd
+        self.ax3.set_ylim(min(indicators['macd'][0])-min(indicators['macd'][0])*0.07/100, max(indicators['macd'][0])+ max(indicators['macd'][0])*0.07/100)
+        
+        self.ax3.set_xlim(df['Datetime'].min(), df['Datetime'].max()) 
+
+        self.ax1.grid(True)
+        self.ax2.grid(True)
+        self.ax3.grid(True)
+        # Ajustar el espaciado entre subgráficos
+        self.fig.tight_layout(pad=0.8)
+        self.canvas.draw()    
 
     def update_ui(self, data):
         indicators, print_msg, print_alert, print_ear, print_price_market, candles, price_market, last_price_market = data
@@ -176,9 +255,8 @@ class MainWindow(QMainWindow):
         self.label_msg.setText(f"{print_msg}")
 
         # Actualizar gráfico de Matplotlib
-        self.fig.clear()
-        self.fig = self.bot.update_chart(candles=candles, indicators= indicators, fig=self.fig)
-        self.canvas.draw()
+        self.update_chart(candles=candles, indicators= indicators)
+        
 
     def update_chart_visibility(self):
         
